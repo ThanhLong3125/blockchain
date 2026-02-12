@@ -126,29 +126,6 @@ Block (ví dụ):
 }
 ```
 
-## Commit & Push lên GitHub (hướng dẫn nhanh)
-
-1. Khởi tạo git nếu chưa có:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit - blockchain"
-```
-
-2. Tạo repo trên GitHub (từ web hoặc dùng `gh`):
-
-```bash
-# nếu đã cài GitHub CLI
-gh repo create <your-username>/<repo-name> --public --source=. --remote=origin --push
-
-# hoặc tạo remote thủ công
-git remote add origin https://github.com/<your-username>/<repo-name>.git
-git push -u origin main
-```
-
-> Lưu ý: máy của bạn cần cài `gh` và đăng nhập, hoặc dùng PAT để push.
-
 ## Testing
 
 ```bash
