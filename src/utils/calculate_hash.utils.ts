@@ -8,5 +8,16 @@ export function calculateHash(
   previous_hash: string,
   nonce: number,
 ): string {
-  return createHash('sha256').update(index.toString() + timestamp.toString() + transactions.join(',') + previous_hash + nonce.toString()).digest('hex');
+  const txString = transactions.map((tx) => JSON.stringify(tx)).join('|');
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        index,
+        timestamp,
+        transactions: txString,
+        previous_hash,
+        nonce,
+      }),
+    )
+    .digest('hex');
 }

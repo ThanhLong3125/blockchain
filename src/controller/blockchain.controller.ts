@@ -10,13 +10,11 @@ import { MineDto } from 'src/dto/mine.dto';
 export class BlockchainController {
   constructor(private readonly blockchainService: BlockchainService) {}
 
-  // Wallet
   @Post('wallet/create')
   createWallet() {
     return this.blockchainService.createWallet();
   }
 
-  // Transaction
   @Post('transaction/sign')
   signTransaction(@Body() body: SignTransactionDto) {
     return this.blockchainService.signTransaction(
@@ -42,13 +40,11 @@ export class BlockchainController {
     return this.blockchainService.getPendingTransactions();
   }
 
-  // Mine
   @Post('mine')
   mine(@Body() body: MineDto) {
     return this.blockchainService.minePendingTransactions(body.minerAddress);
   }
 
-  // Blockchain
   @Get()
   getBlockchain() {
     return this.blockchainService.getBlockchain();

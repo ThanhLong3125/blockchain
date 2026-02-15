@@ -12,7 +12,7 @@ export class BlockEntity {
   reward?: number; // miner reward amount
 
   @Prop()
-  miner?: string; // miner address
+  miner: string; // miner address
 
   @Prop()
   previous_hash: string;

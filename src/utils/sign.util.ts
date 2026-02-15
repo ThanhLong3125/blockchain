@@ -12,4 +12,6 @@ export function signTransaction(tx: TransactionEntity, privateKey: string) {
   const signature = key.sign(txHash, 'hex');
 
   tx.signature = signature.toDER('hex');
+
+  return tx;
 }
