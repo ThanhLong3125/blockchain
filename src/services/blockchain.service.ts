@@ -1,127 +1,173 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { BlockDocument, BlockEntity } from 'src/entities/block.entity';
-import { mineBlock } from 'src/utils/mine_block.util';
+import { BlockEntity, BlockDocument } from 'src/entities/block.entity';
 import {
-  BlockChainDocument,
-  BlockChainEntity,
-} from 'src/entities/blockchain.entity';
+  TransactionEntity,
+  TransactionDocument,
+} from 'src/entities/transaction.entity';
+import { createWallet } from 'src/utils/wallet.util';
+import { verifyTransaction } from 'src/utils/verify.util';
+import { signTransaction } from 'src/utils/sign.util';
+import { calculateHash } from 'src/utils/calculate_hash.utils';
+import { mineBlock } from 'src/utils/mine_block.util';
 
 @Injectable()
-export class BlockChainService {
+export class BlockchainService implements OnModuleInit {
+  private readonly difficulty = 2;
+  private readonly miningReward = 100;
+
+  private mempool: TransactionEntity[] = [];
+
   constructor(
-    @InjectModel(BlockChainEntity.name)
-    private readonly blockChainModel: Model<BlockChainDocument>,
     @InjectModel(BlockEntity.name)
-    private readonly blockModel: Model<BlockDocument>,
+    private blockModel: Model<BlockDocument>,
   ) {}
 
-  async createGenesisBlock(): Promise<BlockDocument> {
-    const index = 0;
+  async onModuleInit() {
+    await this.createGenesisBlock();
+  }
+
+  // ==============================
+  // WALLET
+  // ==============================
+
+  createWallet() {
+    return createWallet();
+  }
+
+  signTransaction(transaction: TransactionEntity, privateKey: string) {
+    return signTransaction(transaction, privateKey);
+  }
+
+  verifyTransaction(transaction: TransactionEntity) {
+    return verifyTransaction(transaction);
+  }
+
+  // ==============================
+  // GENESIS
+  // ==============================
+
+  async createGenesisBlock() {
+    const existing = await this.blockModel.findOne({ index: 0 });
+    if (existing) return existing;
+
+    return this.blockModel.create({
+      index: 0,
+      timestamp: Date.now(),
+      previous_hash: '0',
+      nonce: 0,
+      hash: 'GENESIS_BLOCK',
+      transactions: [],
+    });
+  }
+
+  // ==============================
+  // MEMPOOL
+  // ==============================
+
+  async addTransactionToMempool(transaction: TransactionEntity) {
+    if (transaction.from_address !== 'SYSTEM') {
+      const isValid = verifyTransaction(transaction);
+      if (!isValid) {
+        throw new Error('Invalid transaction signature');
+      }
+    }
+
+    this.mempool.push(transaction);
+
+    return transaction;
+  }
+
+  getPendingTransactions() {
+    return this.mempool;
+  }
+
+  private async getLatestBlock(): Promise<BlockDocument> {
+    const block = await this.blockModel.findOne().sort({ index: -1 });
+    if (!block) throw new Error('No blocks found');
+    return block;
+  }
+
+  async minePendingTransactions(minerAddress: string) {
+    if (this.mempool.length === 0) {
+      throw new Error('No transactions to mine');
+    }
+
+    const latestBlock = await this.getLatestBlock();
+    const newIndex = latestBlock.index + 1;
     const timestamp = Date.now();
-    const nfts = [];
-    const previousHash = '0';
 
-    // difficulty for mining the genesis block
-    const difficulty = 2;
+    const rewardTx = {
+      from_address: 'SYSTEM',
+      to_address: minerAddress,
+      amount: this.miningReward,
+    };
 
-    const { nonce, hash } = mineBlock(difficulty, {
-      index,
+    const transactionsToInclude = [...this.mempool, rewardTx];
+    const { nonce, hash } = mineBlock(this.difficulty, {
+      index: newIndex,
       timestamp,
-      nfts,
-      previousHash,
+      transactions: transactionsToInclude,
+      previousHash: latestBlock.hash,
     });
-
-    const newBlock = await this.blockModel.create({
-      index,
-      nfts,
-      previous_hash: previousHash,
-      nonce,
+    const block = await this.blockModel.create({
+      index: newIndex,
+      timestamp,
+      previous_hash: latestBlock.hash,
       hash,
-      timestamp,
+      nonce,
+      transactions: transactionsToInclude,
     });
 
-    await this.blockChainModel.create({
-      chain: [newBlock],
-    });
+    this.mempool = [];
 
-    return newBlock;
+    return block;
   }
 
-  async getBlockchain(): Promise<BlockChainDocument> {
-    const blockChain = await this.blockChainModel
-      .findOne()
-      .populate('chain')
-      .exec();
-    if (!blockChain) {
-      throw new Error('Blockchain not found');
-    }
-    return blockChain;
+  // ==============================
+  // QUERY
+  // ==============================
+
+  async getBlockchain() {
+    return this.blockModel.find().sort({ index: 1 });
   }
 
-  async getLatestBlock(): Promise<BlockDocument> {
-    const blockChain = await this.getBlockchain();
-    const lastBlock = blockChain.chain[blockChain.chain.length - 1];
-    if (!lastBlock) {
-      throw new Error('Latest block not found');
-    }
-    return lastBlock;
-  }
+  async validateBlockchain() {
+    const blocks = await this.blockModel.find().sort({ index: 1 });
 
-  async addBlock(newBlock: BlockDocument): Promise<BlockDocument> {
-    const blockChain = await this.getBlockchain();
-    const lastBlock = blockChain.chain[blockChain.chain.length - 1];
-    
-    // Verify new block's previous_hash matches last block's hash
-    if (newBlock.previous_hash !== lastBlock.hash) {
-      throw new Error('Invalid previous_hash: does not match last block hash');
-    }
-    
-    // Verify new block's index is correct
-    if (newBlock.index !== lastBlock.index + 1) {
-      throw new Error('Invalid block index: must be sequential');
-    }
-    
-    blockChain.chain.push(newBlock);
-    await blockChain.save();
-    return newBlock;
-  }
+    for (let i = 1; i < blocks.length; i++) {
+      const current = blocks[i];
+      const previous = blocks[i - 1];
 
-  async validateBlockchain(): Promise<boolean> {
-    const blockChain = await this.getBlockchain();
-    const chain = blockChain.chain;
+      if (current.previous_hash !== previous.hash) return false;
 
-    // Validate genesis block
-    if (chain.length === 0) {
-      throw new Error('Blockchain is empty');
-    }
+      const recalculatedHash = calculateHash(
+        current.index,
+        current.timestamp,
+        current.transactions,
+        current.previous_hash,
+        current.nonce,
+      );
 
-    const genesisBlock = chain[0];
-    if (genesisBlock.previous_hash !== '0') {
-      throw new Error('Invalid genesis block: previous_hash should be 0');
-    }
-
-    if (genesisBlock.index !== 0) {
-      throw new Error('Invalid genesis block: index should be 0');
-    }
-
-    // Validate all subsequent blocks
-    for (let i = 1; i < chain.length; i++) {
-      const currentBlock = chain[i];
-      const previousBlock = chain[i - 1];
-
-      // Check index is sequential
-      if (currentBlock.index !== previousBlock.index + 1) {
-        throw new Error(`Invalid chain at block ${i}: non-sequential index`);
-      }
-
-      // Check previous_hash matches
-      if (currentBlock.previous_hash !== previousBlock.hash) {
-        throw new Error(`Invalid chain at block ${i}: previous_hash mismatch`);
-      }
+      if (current.hash !== recalculatedHash) return false;
     }
 
     return true;
+  }
+
+  async getBalance(address: string) {
+    const blocks = await this.blockModel.find();
+
+    let balance = 0;
+
+    for (const block of blocks) {
+      for (const tx of block.transactions || []) {
+        if (tx.from_address === address && tx.amount) balance -= tx.amount;
+        if (tx.to_address === address && tx.amount) balance += tx.amount;
+      }
+    }
+
+    return balance;
   }
 }

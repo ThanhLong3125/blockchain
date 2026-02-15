@@ -1,83 +1,65 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
-
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
 # 🔗 Hệ thống Blockchain (NestJS + MongoDB)
 
-Project này là một triển khai minh họa một blockchain đơn giản dùng NestJS, TypeScript và MongoDB. Bao gồm cơ chế Proof-of-Work (mining), SHA-256 hashing, lưu chuỗi block vào MongoDB và API để quản lý/kiểm tra chuỗi.
+Dự án này là một triển khai minh họa một blockchain đơn giản bằng **NestJS** + **TypeScript** và sử dụng **MongoDB** cho lưu trữ. Mục tiêu: minh họa cơ chế hashing, ký số, mining, mempool và cung cấp API để thao tác (ví, giao dịch, mining, kiểm tra chuỗi).
+
+---
 
 ## ⚙️ Tính năng chính
 
-- Tạo Genesis Block và thêm block mới
-- Mining bằng Proof-of-Work (difficulty configurable trong code)
-- Tính hash bằng SHA-256 (bao gồm `index`, `timestamp`, `nfts`, `previousHash`, `nonce`)
-- Lưu block và chuỗi vào MongoDB qua Mongoose
-- Xác thực toàn bộ blockchain (kiểm tra `previous_hash`, `index` tuần tự)
-- API document bằng Swagger UI
+- Tạo ví (public/private key) và trả về `publicKey` / `privateKey`.
+- Ký giao dịch bằng `privateKey` và xác thực chữ ký bằng `publicKey`.
+- Quản lý mempool: thêm giao dịch chưa xác nhận.
+- Khai thác (Proof-of-Work) để tạo block mới và nhận phần thưởng.
+- Tính toán SHA-256 hash cho block và giao dịch.
+- Lưu trữ block/giao dịch bằng MongoDB (Mongoose).
+- API REST để tương tác với blockchain.
 
-## Cấu trúc thư mục (tóm tắt)
+---
 
-```
-src/
-  controller/
-    blockchain.controller.ts   # REST API cho blockchain
-  services/
-    blockchain.service.ts     # Quản lý chuỗi, validate
-    block.service.ts          # Tạo và mine block
-  entities/
-    block.entity.ts           # Mongoose class cho Block
-    blockchain.entity.ts      # Mongoose class cho Blockchain
-    nft.entity.ts             # Mongoose class cho NFT
-  dto/
-    create_block.dto.ts       # DTO cho tạo block
-  schemas/
-    block.schema.ts
-    blockchain.schema.ts
-  utils/
-    calculate_hash.utils.ts   # Tính SHA-256
-    mine_block.util.ts        # Mining loop
-  app.module.ts
-  main.ts
-```
+## Mục đích & tác dụng
 
-## Yêu cầu (Requirements)
+- Minh họa cách blockchain bảo vệ dữ liệu: hash liên kết block để ngăn thay đổi lịch sử.
+- Thể hiện vai trò của chữ ký số trong xác thực giao dịch.
+- Giải thích cơ chế Proof-of-Work và mempool.
 
-- Node.js (v18+ recommended)
-- Yarn
-- MongoDB (local hoặc Atlas)
+---
 
-## Cài đặt & chạy nhanh
+## Cấu trúc chính (tóm tắt)
+
+- `src/controller/blockchain.controller.ts` — REST API (ví, giao dịch, mining, blockchain).
+- `src/services/blockchain.service.ts` — Business logic (mempool, tạo block, mining, validate).
+- `src/dto/` — DTOs cho các endpoint (ví dụ: `transaction.dto.ts`, `sign-transaction.dto.ts`, `verify-transaction.dto.ts`, `mine.dto.ts`).
+- `src/utils/` — Utilities: hashing, sign, verify, mine, wallet.
+- `src/entities/` — Entity / schema cho Mongoose.
+
+---
+
+## API chính (tóm tắt)
+
+- `POST /api/blockchain/wallet/create` — Tạo ví mới.
+- `POST /api/blockchain/transaction/sign` — Ký giao dịch. Body: `SignTransactionDto` (gồm `transaction` và `privateKey`).
+- `POST /api/blockchain/transaction/verify` — Xác thực giao dịch. Body: `VerifyTransactionDto`.
+- `POST /api/blockchain/transaction` — Thêm giao dịch vào mempool. Body: `TransactionDto`.
+- `POST /api/blockchain/mine` — Khai thác pending transactions. Body: `MineDto` (gồm `minerAddress`).
+- `GET /api/blockchain` — Lấy toàn bộ blockchain.
+- `GET /api/blockchain/validate` — Kiểm tra tính toàn vẹn của blockchain.
+- `GET /api/blockchain/balance/:address` — Lấy số dư cho `address`.
+
+> Lưu ý: shapes của request/response được định nghĩa trong `src/dto/`.
+
+---
+
+## Cài đặt & chạy
+
+Yêu cầu: Node.js v18+, npm/yarn, MongoDB.
 
 1. Cài dependencies:
 
 ```bash
-yarn install
+npm install
 ```
 
-2. Tạo file `.env` với tối thiểu:
+2. Tạo file `.env` (ví dụ):
 
 ```env
 PORT=3000
@@ -85,58 +67,140 @@ DATABASE_URL=mongodb://localhost:27017/blockchain
 NODE_ENV=development
 ```
 
-3. Chạy ứng dụng (dev):
+3. Chạy dev server:
 
 ```bash
-yarn start:dev
+npm run start:dev
 ```
 
-Ứng dụng mặc định chạy trên `http://localhost:3000` và Swagger UI tại `http://localhost:3000/api/docs`.
-
-## API (tóm tắt)
-
-- POST `/api/blockchain/genesis-block` — tạo genesis block
-- GET `/api/blockchain` — lấy toàn bộ blockchain
-- GET `/api/blockchain/validate` — validate toàn bộ blockchain
-- GET `/api/blockchain/latest-block` — lấy block mới nhất
-- POST `/api/blockchain` — thêm block mới (body: `index`, `previous_hash`, `nfts`)
-
-Chi tiết request/response xem trong Swagger UI.
-
-## Lưu ý về `timestamp` và `createdAt/updatedAt`
-
-- `timestamp` (số nguyên milliseconds) là phần dữ liệu của blockchain và được dùng để tính hash và mining.
-- `createdAt`/`updatedAt` là metadata do Mongoose (`@Schema({ timestamps: true })`) tự thêm — kiểu `Date` và phục vụ mục đích lưu trữ, không thay thế `timestamp` để tính hash.
-
-## Mô hình dữ liệu (tóm tắt)
-
-Block (ví dụ):
-
-```json
-{
-  "_id": "...",
-  "index": 1,
-  "hash": "...",
-  "previous_hash": "...",
-  "nonce": 123,
-  "timestamp": 1707776500000,
-  "nfts": [],
-  "createdAt": "2026-02-12T...",
-  "updatedAt": "2026-02-12T..."
-}
-```
-
-## Testing
+4. Build production:
 
 ```bash
-yarn test        # unit
-yarn test:e2e    # e2e
+npm run build
+npm run start:prod
 ```
 
-## Gợi ý tinh chỉnh
+---
 
-- Thay đổi `difficulty` trong `mine_block.util.ts` để thử tốc độ/độ khó.
-- Nếu muốn lưu thêm metadata, extend `BlockEntity`.
+## Ví dụ nhanh (curl)
+
+Tạo ví:
+
+```bash
+curl -X POST http://localhost:3000/api/blockchain/wallet/create
+```
+
+Ký giao dịch:
+
+```bash
+curl -X POST http://localhost:3000/api/blockchain/transaction/sign \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transaction": { "from_address":"<pub>", "to_address":"<addr>", "amount": 1 },
+    "privateKey": "<priv>"
+  }'
+```
+
+Khai thác pending transactions:
+
+```bash
+curl -X POST http://localhost:3000/api/blockchain/mine \
+  -H "Content-Type: application/json" \
+  -d '{ "minerAddress": "<miner_public_key>" }'
+```
+
+---
+
+## Flow (Luồng hoạt động của hệ thống)
+
+Dưới đây là luồng thao tác điển hình từ tạo ví đến block được thêm vào chuỗi:
+
+1. Step 1 — Tạo ví (Generate keys)
+
+- Endpoint: `POST /api/blockchain/wallet/create`
+- Kết quả: nhận `privateKey` (giữ bí mật) và `publicKey` (dùng làm `from_address`).
+
+2. Step 2 — Tạo & Ký giao dịch (Create & Sign Transaction)
+
+- Tạo object giao dịch với `from_address`, `to_address`, `amount`.
+- Ký: `POST /api/blockchain/transaction/sign` (Body: `SignTransactionDto`).
+- Kết quả: giao dịch có `signature`.
+
+3. Step 3 — Thêm giao dịch vào mempool (Broadcast / Submit)
+
+- Endpoint: `POST /api/blockchain/transaction` (Body: `TransactionDto`).
+- Giao dịch nằm trong mempool chờ được khai thác.
+
+4. Step 4 — Xác thực giao dịch (Optional verify)
+
+- Endpoint: `POST /api/blockchain/transaction/verify` (Body: `VerifyTransactionDto`).
+- Hệ thống kiểm tra chữ ký dựa trên `from_address` và `signature`.
+
+5. Step 5 — Khai thác pending transactions (Mining)
+
+- Node miner gọi: `POST /api/blockchain/mine` (Body: `MineDto` với `minerAddress`).
+- Service thu các giao dịch pending, tạo block, tìm `nonce` thỏa difficulty (Proof-of-Work), và thêm reward.
+
+6. Step 6 — Thêm block vào blockchain
+
+- Sau khi mining thành công, block được push vào chuỗi và lưu vào MongoDB.
+- Mempool được làm rỗng hoặc loại bỏ các giao dịch đã được xác nhận.
+
+7. Step 7 — Validate & Sync
+
+- Kiểm tra tính hợp lệ: `GET /api/blockchain/validate`.
+- Kiểm tra `previous_hash`, index và signatures.
+
+8. Step 8 — Query trạng thái (Balance / Chain)
+
+- Lấy balance: `GET /api/blockchain/balance/:address`.
+- Lấy toàn bộ chain hoặc block cụ thể: `GET /api/blockchain`.
+
+Luồng này phù hợp cho môi trường demo/local. Trong mạng nhiều node, sẽ có thêm bước broadcast block và sync giữa các node.
+
+---
+
+## 📖 Swagger UI
+
+Truy cập `http://localhost:3000/api/docs` để xem tất cả API và test trực tiếp.
+
+---
+
+## 🏗️ Kiến Trúc Hệ Thống
+
+```
+┌──────────────────────────────┐
+│  BlockchainController        │  (REST API Layer)
+└──────────────┬───────────────┘
+               │
+┌──────────────▼───────────────┐
+│  BlockchainService           │  (Business Logic)
+└──────────────┬───────────────┘
+               │
+       ┌───────┴─────────┐
+       │                 │
+   ┌───▼─────┐      ┌────▼────┐
+   │ MongoDB  │      │Utilities │
+   │ (Data)  │      │(Pure FN) │
+   └─────────┘      └──────────┘
+                    ├─ calculate_hash
+                    ├─ mine_block
+                    ├─ createWallet
+                    ├─ signTransaction
+                    ├─ verifyTransaction
+                    └─ calculateTransactionHash
+```
+
+---
+
+## 📝 Testing
+
+```bash
+npm test          # unit tests
+npm run test:e2e  # e2e tests
+```
+
+---
 
 ## License
 
@@ -144,4 +208,4 @@ MIT
 
 ---
 
-Last updated: February 12, 2026
+_Last updated: February 14, 2026_

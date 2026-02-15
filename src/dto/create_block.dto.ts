@@ -1,13 +1,16 @@
-import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
-import { NftEntity } from 'src/entities/nft.entity';
+import { IsNotEmpty, IsNumber, IsString, IsOptional } from 'class-validator';
+import { TransactionEntity } from 'src/entities/transaction.entity';
 
 export class CreateBlockDto {
   @IsNumber()
   @IsNotEmpty()
   index: number;
 
-  @IsNotEmpty()
-  nfts: NftEntity[];
+  @IsOptional()
+  transactions?: TransactionEntity[];
+
+  @IsOptional()
+  reward?: number;
 
   @IsNotEmpty()
   @IsString()

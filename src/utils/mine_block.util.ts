@@ -1,4 +1,4 @@
-import { NftEntity } from 'src/entities/nft.entity';
+import { TransactionEntity } from 'src/entities/transaction.entity';
 import { calculateHash } from './calculate_hash.utils';
 
 export function mineBlock(
@@ -6,7 +6,7 @@ export function mineBlock(
   block: {
     index: number;
     timestamp: number;
-    nfts: NftEntity[];
+    transactions: TransactionEntity[];
     previousHash: string;
   },
 ): { nonce: number; hash: string } {
@@ -17,7 +17,7 @@ export function mineBlock(
     hash = calculateHash(
       block.index,
       block.timestamp,
-      block.nfts,
+      block.transactions,
       block.previousHash,
       nonce,
     );

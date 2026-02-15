@@ -1,21 +1,12 @@
 import { createHash } from 'crypto';
-import { NftEntity } from 'src/entities/nft.entity';
+import { TransactionEntity } from 'src/entities/transaction.entity';
 
 export function calculateHash(
   index: number,
   timestamp: number,
-  nfts: NftEntity[],
-  previousHash: string,
+  transactions: TransactionEntity[],
+  previous_hash: string,
   nonce: number,
 ): string {
-  const nftString = JSON.stringify(nfts);
-
-  const data =
-    index.toString() +
-    timestamp.toString() +
-    nftString +
-    previousHash +
-    nonce.toString();
-
-  return createHash('sha256').update(data).digest('hex');
+  return createHash('sha256').update(index.toString() + timestamp.toString() + transactions.join(',') + previous_hash + nonce.toString()).digest('hex');
 }

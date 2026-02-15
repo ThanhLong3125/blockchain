@@ -1,90 +1,66 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { BlockChainService } from 'src/services/blockchain.service';
-import { BlockService } from 'src/services/block.service';
-import { CreateBlockDto } from 'src/dto/create_block.dto';
+import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Param } from '@nestjs/common';
+import { BlockchainService } from 'src/services/blockchain.service';
+import { TransactionDto } from 'src/dto/transaction.dto';
+import { SignTransactionDto } from 'src/dto/sign-transaction.dto';
+import { VerifyTransactionDto } from 'src/dto/verify-transaction.dto';
+import { MineDto } from 'src/dto/mine.dto';
 
-@ApiTags('Blockchain')
 @Controller('api/blockchain')
 export class BlockchainController {
-  constructor(
-    private readonly blockchainService: BlockChainService,
-    private readonly blockService: BlockService,
-  ) {}
+  constructor(private readonly blockchainService: BlockchainService) {}
 
-  @Post('genesis-block')
-  @ApiOperation({ summary: 'Tạo Genesis Block' })
-  @ApiResponse({ status: 200, description: 'Genesis block created successfully' })
-  async createGenesisBlock() {
-    try {
-      const genesisBlock = await this.blockchainService.createGenesisBlock();
-      return {
-        success: true,
-        message: 'Genesis block created successfully',
-        data: genesisBlock,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
+  // Wallet
+  @Post('wallet/create')
+  createWallet() {
+    return this.blockchainService.createWallet();
   }
 
+  // Transaction
+  @Post('transaction/sign')
+  signTransaction(@Body() body: SignTransactionDto) {
+    return this.blockchainService.signTransaction(
+      body.transaction,
+      body.privateKey,
+    );
+  }
+
+  @Post('transaction/verify')
+  verifyTransaction(@Body() body: VerifyTransactionDto) {
+    return {
+      isValid: this.blockchainService.verifyTransaction(body.transaction),
+    };
+  }
+
+  @Post('transaction')
+  addTransaction(@Body() transaction: TransactionDto) {
+    return this.blockchainService.addTransactionToMempool(transaction);
+  }
+
+  @Get('transactions/pending')
+  getPending() {
+    return this.blockchainService.getPendingTransactions();
+  }
+
+  // Mine
+  @Post('mine')
+  mine(@Body() body: MineDto) {
+    return this.blockchainService.minePendingTransactions(body.minerAddress);
+  }
+
+  // Blockchain
   @Get()
-  @ApiOperation({ summary: 'Lấy toàn bộ blockchain' })
-  @ApiResponse({ status: 200, description: 'Blockchain retrieved successfully' })
-  async getBlockchain() {
-    try {
-      const blockchain = await this.blockchainService.getBlockchain();
-      return {
-        success: true,
-        data: blockchain,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
+  getBlockchain() {
+    return this.blockchainService.getBlockchain();
   }
 
   @Get('validate')
-  @ApiOperation({ summary: 'Xác thực blockchain' })
-  @ApiResponse({ status: 200, description: 'Blockchain validation result' })
-  async validateBlockchain() {
-    try {
-      const isValid = await this.blockchainService.validateBlockchain();
-      return {
-        success: true,
-        isValid,
-        message: 'Blockchain is valid',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        isValid: false,
-        message: error.message,
-      };
-    }
+  validate() {
+    return this.blockchainService.validateBlockchain();
   }
 
-  @Get('latest-block')
-  @ApiOperation({ summary: 'Lấy block mới nhất' })
-  @ApiResponse({ status: 200, description: 'Latest block retrieved' })
-  async getLatestBlock() {
-    try {
-      const latestBlock = await this.blockchainService.getLatestBlock();
-      return {
-        success: true,
-        data: latestBlock,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
+  @Get('balance/:address')
+  getBalance(@Param('address') address: string) {
+    return this.blockchainService.getBalance(address);
   }
-
 }
