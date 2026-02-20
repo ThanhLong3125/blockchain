@@ -307,7 +307,8 @@ export class BlockchainService implements OnModuleInit {
           difficulty: current.difficulty ?? this.difficulty,
         };
 
-        const recalculatedHash = calculateHash(header);
+        // Truyền defaultDifficulty để đảm bảo tính đúng hash
+        const recalculatedHash = calculateHash(header, this.difficulty);
 
         if (current.hash !== recalculatedHash) return false;
 
