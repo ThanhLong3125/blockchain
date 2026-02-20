@@ -1,28 +1,24 @@
-import { TransactionEntity } from 'src/entities/transaction.entity';
+import { BlockHeader } from 'src/types/block-header.type';
 import { calculateHash } from './calculate_hash.utils';
 
+/**
+ * Mine dựa trên block header: chỉ hash header (bao gồm merkleRoot, difficulty).
+ */
 export function mineBlock(
-  difficulty: number,
-  block: {
-    index: number;
-    timestamp: number;
-    transactions: TransactionEntity[];
-    previousHash: string;
-  },
+  baseHeader: Omit<BlockHeader, 'nonce'>,
 ): { nonce: number; hash: string } {
   let nonce = 0;
   let hash = '';
 
   while (true) {
-    hash = calculateHash(
-      block.index,
-      block.timestamp,
-      block.transactions,
-      block.previousHash,
+    const header: BlockHeader = {
+      ...baseHeader,
       nonce,
-    );
+    };
 
-    if (hash.startsWith('0'.repeat(difficulty))) {
+    hash = calculateHash(header);
+
+    if (hash.startsWith('0'.repeat(header.difficulty))) {
       break;
     }
 

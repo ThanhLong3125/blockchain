@@ -1,10 +1,10 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { Param } from '@nestjs/common';
-import { BlockchainService } from 'src/services/blockchain.service';
-import { TransactionDto } from 'src/dto/transaction.dto';
-import { SignTransactionDto } from 'src/dto/sign-transaction.dto';
-import { VerifyTransactionDto } from 'src/dto/verify-transaction.dto';
-import { MineDto } from 'src/dto/mine.dto';
+import { BlockchainService } from '../services/blockchain.service';
+import { TransactionDto } from '../dto/transaction.dto';
+import { SignTransactionDto } from '../dto/sign-transaction.dto';
+import { VerifyTransactionDto } from '../dto/verify-transaction.dto';
+import { MineDto } from '../dto/mine.dto';
 
 @Controller('api/blockchain')
 export class BlockchainController {

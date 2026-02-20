@@ -39,6 +39,9 @@ Dự án tập trung vào việc minh họa các khái niệm cơ bản của bl
 - ✅ **Mempool**: Cách quản lý các giao dịch chưa được xác nhận
 - ✅ **Chain Validation**: Kiểm tra tính hợp lệ của toàn bộ chuỗi
 - ✅ **Transaction & Block Structure**: Cấu trúc dữ liệu cơ bản
+- ✅ **Merkle Tree**: Cây băm nhị phân để tóm tắt transactions (Merkle Root)
+- ✅ **Block Header/Body Separation**: Tách biệt phần header (hash) và body (transactions)
+- ✅ **Difficulty Adjustment**: Điều chỉnh độ khó mining tự động dựa trên thời gian block
 
 ### Kỹ Năng Backend Development
 - ✅ NestJS Architecture (Controllers, Services, Modules)
@@ -186,15 +189,25 @@ Dự án tập trung vào việc minh họa các khái niệm cơ bản của bl
 
 ### 5️⃣ Proof-of-Work Mining
 - **Algorithm**: Difficulty-based nonce finding
-- **Difficulty**: 2 (block hash phải bắt đầu bằng "00")
+- **Initial Difficulty**: 2 (block hash phải bắt đầu bằng "00")
 - **Reward**: 100 tokens cho miner
+- **Hash Strategy**: **Hash only header** (không hash toàn bộ transactions trực tiếp)
 - **Process**:
 
 ```typescript
-// Mining algorithm
+// Mining algorithm - Hash only header
 let nonce = 0;
 while (true) {
-  hash = SHA256(index + timestamp + transactions + previousHash + nonce);
+  // Tính Merkle Root từ transactions trước
+  const merkleRoot = calculateMerkleRoot(transactions);
+  
+  // Chỉ hash header (không hash transactions trực tiếp)
+  const header = {
+    index, timestamp, previous_hash, merkle_root: merkleRoot,
+    nonce, version: 1, difficulty
+  };
+  
+  hash = SHA256(header);
   if (hash.startsWith("0".repeat(difficulty))) {
     return { nonce, hash };
   }
@@ -202,27 +215,106 @@ while (true) {
 }
 ```
 
-### 6️⃣ Block Creation & Validation
+**Lợi ích của Hash Only Header:**
+- ✅ Hiệu quả hơn: không cần hash lại toàn bộ transactions mỗi lần thử nonce
+- ✅ Merkle Root đại diện cho toàn bộ transactions một cách compact
+- ✅ Có thể chứng minh transaction thuộc block bằng Merkle Proof (future feature)
+
+### 6️⃣ Block Header & Body Separation
+- **Block Header** (phần cố định dùng để tính hash):
+  - `index`: Vị trí block trong chain
+  - `timestamp`: Thời gian tạo block (ms)
+  - `previous_hash`: Hash của block trước (immutable link)
+  - `merkle_root`: Merkle root của tất cả transactions
+  - `nonce`: Số được tìm qua PoW
+  - `version`: Phiên bản block format (hiện tại: 1)
+  - `difficulty`: Độ khó mining tại thời điểm tạo block
+  
+- **Block Body** (phần dữ liệu):
+  - `transactions[]`: Danh sách giao dịch trong block
+  - `miner`: Địa chỉ người khai thác
+  - `reward`: Phần thưởng khai thác (100 tokens)
+
+**Tại sao tách Header/Body?**
+- ✅ Header nhỏ gọn, dễ hash và verify
+- ✅ Merkle Root trong header đại diện cho toàn bộ transactions
+- ✅ Có thể verify block mà không cần đọc toàn bộ transactions
+- ✅ Hỗ trợ Merkle Proof để chứng minh transaction thuộc block
+
+### 7️⃣ Merkle Tree & Merkle Root
+- **Merkle Tree**: Cây băm nhị phân tạo ra một giá trị duy nhất (Merkle Root) tóm tắt toàn bộ transactions
+- **Algorithm**:
+  1. Hash từng transaction → leaf nodes
+  2. Ghép cặp và hash → parent nodes
+  3. Lặp lại cho đến khi còn 1 node → Merkle Root
+  4. Nếu số node lẻ, nhân đôi node cuối
+
+```typescript
+// Ví dụ với 3 transactions:
+//     Root
+//    /    \
+//   AB     C
+//  /  \   / \
+// A    B C   C (duplicate)
+```
+
+**Lợi ích:**
+- ✅ Chứng minh transaction thuộc block bằng Merkle Proof (chỉ cần log(n) nodes)
+- ✅ Tránh phải hash toàn bộ danh sách transactions mỗi lần
+- ✅ Dễ dàng verify integrity của block
+
+### 8️⃣ Block Creation & Validation
 - **Block Structure**: 
-  - index, timestamp, previous_hash, hash, nonce
-  - transactions[], miner, reward
+  - Header: index, timestamp, previous_hash, hash, nonce, version, difficulty, merkle_root
+  - Body: transactions[], miner, reward
   
 - **Validation Rules**:
   - previous_hash phải match với block trước
-  - hash phải được tính đúng (verification)
+  - hash phải được tính đúng từ header (hash only header)
+  - merkle_root phải khớp với Merkle root tính lại từ transactions
+  - hash phải thỏa mãn difficulty requirement (bắt đầu bằng số 0 theo difficulty)
   - Tất cả transactions phải có signature hợp lệ
 
-### 7️⃣ Blockchain Integrity Check
+### 9️⃣ Difficulty Adjustment (Điều chỉnh độ khó tự động)
+- **Purpose**: Tự động điều chỉnh difficulty để duy trì thời gian block ổn định
+- **Target Block Time**: 10 giây (có thể cấu hình)
+- **Adjustment Interval**: Mỗi 5 block (có thể cấu hình)
+- **Algorithm** (Mild adjustment - điều chỉnh nhẹ):
+
+```typescript
+// Tính thời gian thực tế của N block gần nhất
+const actualTime = latestBlock.timestamp - fromBlock.timestamp;
+const expectedTime = targetBlockTime * adjustmentInterval;
+
+// Điều chỉnh difficulty
+if (actualTime < expectedTime / 2) {
+  // Block quá nhanh → tăng difficulty
+  difficulty += 1;
+} else if (actualTime > expectedTime * 2 && difficulty > 1) {
+  // Block quá chậm → giảm difficulty (min = 1)
+  difficulty -= 1;
+}
+// Ngược lại giữ nguyên
+```
+
+**Lợi ích:**
+- ✅ Tự động thích ứng với sự thay đổi của hashrate
+- ✅ Duy trì thời gian block ổn định (~10s)
+- ✅ Bảo vệ blockchain khỏi spam khi có nhiều miner
+- ✅ Giảm difficulty khi có ít miner để đảm bảo block vẫn được tạo
+
+### 🔟 Blockchain Integrity Check
 - **Purpose**: Đảm bảo blockchain chưa bị tamper
 - **Checks**:
   1. Mỗi block có previous_hash == hash của block trước
-  2. Hash của mỗi block phải tính đúng từ dữ liệu
-  3. Difficulty requirement phải được thỏa
+  2. Merkle root của mỗi block phải khớp với Merkle root tính lại từ transactions
+  3. Hash của mỗi block phải tính đúng từ header (hash only header)
+  4. Hash phải thỏa mãn difficulty requirement (bắt đầu bằng số 0 theo difficulty)
 
-### 8️⃣ Balance Query
+### 1️⃣1️⃣ Balance Query
 - **Purpose**: Tính số dư của một address
 - **Algorithm**: Scan tất cả blocks, tất cả transactions
-  - Trừ khi to_address == address
+  - Trừ khi from_address == address
   - Cộng khi to_address == address
 
 ---
@@ -453,11 +545,18 @@ Error (400):
 ```typescript
 {
   _id: ObjectId,
+  
+  // Block Header (dùng để tính hash)
   index: Number,              // Vị trí block trong chain
   timestamp: Number,          // Thời gian tạo block (ms)
   previous_hash: String,      // Hash của block trước (immutable link)
-  hash: String,               // SHA-256 hash của block này
+  hash: String,               // SHA-256 hash của block header
   nonce: Number,              // Số được tìm qua PoW
+  version: Number,             // Phiên bản block format (mặc định: 1)
+  difficulty: Number,          // Độ khó mining tại thời điểm tạo block
+  merkle_root: String,         // Merkle root của tất cả transactions
+  
+  // Block Body
   transactions: [{            // Mảng transactions trong block
     from_address: String,
     to_address: String,
@@ -466,8 +565,22 @@ Error (400):
   }],
   miner: String,              // Địa chỉ người khai thác
   reward: Number,             // Phần thưởng khai thác (100 tokens)
+  
   createdAt: Date,
   updatedAt: Date
+}
+```
+
+**Block Header Type (TypeScript Interface):**
+```typescript
+interface BlockHeader {
+  index: number;
+  timestamp: number;
+  previous_hash: string;
+  merkle_root: string;
+  nonce: number;
+  version: number;
+  difficulty: number;
 }
 ```
 
@@ -528,7 +641,52 @@ Input: Message hash, Signature, Public Key
 Output: True/False
 ```
 
-### 3. Cryptographic Hash Function (SHA-256)
+### 3. Merkle Tree & Merkle Root
+
+**Merkle Tree là gì?**
+- Cây băm nhị phân (binary hash tree) được đặt tên theo Ralph Merkle
+- Mỗi leaf node là hash của một transaction
+- Mỗi non-leaf node là hash của 2 child nodes
+- Root node (Merkle Root) đại diện cho toàn bộ transactions
+
+**Cách xây dựng:**
+```
+Ví dụ với 4 transactions (A, B, C, D):
+
+        Root (Merkle Root)
+       /                    \
+    Hash(AB)              Hash(CD)
+   /        \            /        \
+Hash(A)  Hash(B)   Hash(C)  Hash(D)
+  |        |         |        |
+  A        B         C        D
+
+Nếu số transaction lẻ (ví dụ 3 transactions):
+        Root
+       /    \
+    Hash(AB)  Hash(CC)  ← C được duplicate
+   /    \    /    \
+Hash(A) Hash(B) Hash(C) Hash(C)
+```
+
+**Lợi ích của Merkle Tree:**
+1. **Compact Representation**: Merkle Root (32 bytes) đại diện cho hàng nghìn transactions
+2. **Efficient Verification**: Chứng minh transaction thuộc block chỉ cần log(n) nodes (Merkle Proof)
+3. **Tamper Detection**: Thay đổi bất kỳ transaction nào sẽ làm thay đổi Merkle Root
+4. **Parallel Processing**: Có thể tính Merkle Tree song song
+
+**Merkle Proof Example:**
+```
+Để chứng minh transaction C thuộc block, chỉ cần:
+- Hash(C)
+- Hash(D) (sibling)
+- Hash(AB) (uncle)
+- Merkle Root
+
+Verify: Hash(Hash(Hash(C) + Hash(D)) + Hash(AB)) == Merkle Root
+```
+
+### 4. Cryptographic Hash Function (SHA-256)
 
 **Properties:**
 - **Deterministic**: Same input → Same hash
@@ -538,16 +696,24 @@ Output: True/False
 
 **Usage in Blockchain:**
 ```
+// Block Hash (Hash Only Header - không hash transactions trực tiếp)
+Merkle Root = MerkleTree(transactions)
 Block Hash = SHA256(
-  index + timestamp + transactions + previous_hash + nonce
+  index + timestamp + previous_hash + merkle_root + nonce + version + difficulty
 )
 
+// Transaction Hash (dùng cho signing)
 Transaction Hash = SHA256(
   from_address + to_address + amount
 )
 ```
 
-### 4. Security Considerations
+**Tại sao Hash Only Header?**
+- ✅ Hiệu quả: Không cần hash lại toàn bộ transactions mỗi lần thử nonce
+- ✅ Merkle Root đại diện cho toàn bộ transactions một cách compact
+- ✅ Chuẩn blockchain: Giống Bitcoin và Ethereum
+
+### 5. Security Considerations
 
 | Aspect | Current | Production |
 |--------|---------|-----------|
@@ -921,7 +1087,10 @@ async someMethod() {
 - **Hash Linking**: Each block links to previous via hash (immutability)
 - **Proof-of-Work**: Mining difficulty protects against spam
 - **Digital Signatures**: Cryptographic proof of ownership
-- **Merkle Tree Concept**: Transaction hash organization
+- **Merkle Tree**: Binary hash tree để tóm tắt transactions (Merkle Root)
+- **Block Header/Body**: Tách biệt phần header (hash) và body (transactions)
+- **Hash Only Header**: Chỉ hash header (bao gồm Merkle Root), không hash transactions trực tiếp
+- **Difficulty Adjustment**: Tự động điều chỉnh độ khó để duy trì thời gian block ổn định
 
 ### 2. Cryptographic Concepts Learned
 - **secp256k1 Curve**: Why Bitcoin uses this specific elliptic curve
@@ -952,11 +1121,16 @@ async someMethod() {
 ## 🚀 Phát Triển Trong Tương Lai
 
 ### Short-term Improvements
+- [x] ✅ Block Header/Body separation
+- [x] ✅ Merkle Root implementation
+- [x] ✅ Hash only header (không hash transactions trực tiếp)
+- [x] ✅ Difficulty adjustment mechanism
 - [ ] Add environment-based config (development, staging, production)
 - [ ] Implement Redis for persistent mempool instead of in-memory
 - [ ] Add transaction fee structure instead of fixed mining reward
 - [ ] Support batch transactions per block limit
 - [ ] Add transaction nonce to prevent replay attacks
+- [ ] Implement Merkle Proof để chứng minh transaction thuộc block
 
 ### Medium-term Enhancements
 - [ ] Implement P2P networking (peer-to-peer blockchain)
@@ -1029,9 +1203,12 @@ blockchain/
 │   │   ├── wallet.util.ts                # Wallet creation (keypair)
 │   │   ├── sign.util.ts                  # Transaction signing
 │   │   ├── verify.util.ts                # Signature verification
-│   │   ├── mine_block.util.ts            # PoW mining algorithm
-│   │   ├── calculate_hash.utils.ts       # SHA-256 hashing
+│   │   ├── mine_block.util.ts            # PoW mining algorithm (hash only header)
+│   │   ├── calculate_hash.utils.ts       # SHA-256 hashing (header only)
+│   │   ├── merkle.util.ts                # Merkle tree & Merkle root calculation
 │   │   └── transaction.util.ts           # Transaction hashing
+│   ├── types/
+│   │   └── block-header.type.ts          # BlockHeader interface definition
 │   ├── app.module.ts                     # Main module
 │   └── main.ts                           # Entry point
 ├── test/
@@ -1073,8 +1250,12 @@ npm test -- blockchain.service.spec.ts
 - **Number of Endpoints**: 8 major endpoints
 - **Cryptographic Curves**: secp256k1 (Bitcoin standard)
 - **Hash Algorithm**: SHA-256 (256-bit output)
-- **Difficulty Level**: 2 (hash starts with "00")
+- **Initial Difficulty**: 2 (hash starts with "00")
+- **Difficulty Adjustment**: Tự động điều chỉnh mỗi 5 block
+- **Target Block Time**: 10 giây
 - **Mining Reward**: 100 tokens per block
+- **Block Structure**: Header/Body separation với Merkle Root
+- **Hash Strategy**: Hash only header (không hash transactions trực tiếp)
 
 ---
 
@@ -1118,5 +1299,14 @@ February 2026
 | 1.0 | 2026-02-14 | Initial project setup with core features |
 | 1.1 | 2026-02-15 | Added comprehensive error handling with try/catch blocks in all service methods |
 | 1.2 | 2026-02-15 | Complete documentation and detailed report generation |
+| 2.0 | 2026-02-20 | **Major Update**: Block Header/Body separation, Merkle Root, Hash only header, Difficulty adjustment |
 
-_Last updated: February 15, 2026_
+**Version 2.0 Highlights:**
+- ✅ Tách Block thành Header và Body theo chuẩn blockchain
+- ✅ Implement Merkle Tree để tính Merkle Root từ transactions
+- ✅ Hash only header (không hash transactions trực tiếp) - hiệu quả hơn và chuẩn hơn
+- ✅ Difficulty adjustment tự động dựa trên thời gian block (target: 10s)
+- ✅ Genesis block giờ cũng dùng hash header thay vì chuỗi cố định
+- ✅ Validation được cải thiện: kiểm tra Merkle Root và difficulty requirement
+
+_Last updated: February 20, 2026_

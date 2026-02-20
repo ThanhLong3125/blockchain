@@ -6,19 +6,22 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { BlockEntity, BlockDocument } from 'src/entities/block.entity';
+import { BlockEntity, BlockDocument } from '../entities/block.entity';
 import {
   TransactionEntity,
-} from 'src/entities/transaction.entity';
-import { createWallet } from 'src/utils/wallet.util';
-import { verifyTransaction } from 'src/utils/verify.util';
-import { signTransaction } from 'src/utils/sign.util';
-import { calculateHash } from 'src/utils/calculate_hash.utils';
-import { mineBlock } from 'src/utils/mine_block.util';
+} from '../entities/transaction.entity';
+import { createWallet } from '../utils/wallet.util';
+import { verifyTransaction } from '../utils/verify.util';
+import { signTransaction } from '../utils/sign.util';
+import { calculateHash } from '../utils/calculate_hash.utils';
+import { mineBlock } from '../utils/mine_block.util';
+import { calculateMerkleRoot } from '../utils/merkle.util';
 
 @Injectable()
 export class BlockchainService implements OnModuleInit {
-  private readonly difficulty = 2;
+  private readonly difficulty = 2; // initial/default difficulty
+  private readonly targetBlockTimeMs = 10000; // 10s cho demo
+  private readonly adjustmentInterval = 5; // điều chỉnh mỗi 5 block
   private readonly miningReward = 100;
 
   private mempool: TransactionEntity[] = [];
@@ -88,13 +91,32 @@ export class BlockchainService implements OnModuleInit {
       const existing = await this.blockModel.findOne({ index: 0 });
       if (existing) return existing;
 
-      return await this.blockModel.create({
+      const timestamp = Date.now();
+      const merkle_root = '';
+      const difficulty = this.difficulty;
+
+      const header = {
         index: 0,
-        timestamp: Date.now(),
+        timestamp,
         previous_hash: '0',
+        merkle_root,
         nonce: 0,
-        hash: 'GENESIS_BLOCK',
+        version: 1,
+        difficulty,
+      };
+
+      const hash = calculateHash(header);
+
+      return await this.blockModel.create({
+        index: header.index,
+        timestamp: header.timestamp,
+        previous_hash: header.previous_hash,
+        nonce: header.nonce,
+        hash,
         transactions: [],
+        merkle_root: header.merkle_root,
+        version: header.version,
+        difficulty: header.difficulty,
       });
     } catch (error) {
       throw new InternalServerErrorException(
@@ -156,6 +178,43 @@ export class BlockchainService implements OnModuleInit {
     }
   }
 
+  /**
+   * Tính difficulty mới dựa trên thời gian mine các block gần đây.
+   * Chiến lược nhẹ (mild): chỉ tăng/giảm 1 đơn vị khi lệch rất nhiều.
+   */
+  private async getAdjustedDifficulty(): Promise<number> {
+    const latestBlock = await this.getLatestBlock();
+
+    // Chưa đủ block để điều chỉnh hoặc đang ở genesis
+    if (
+      latestBlock.index === 0 ||
+      latestBlock.index < this.adjustmentInterval
+    ) {
+      return this.difficulty;
+    }
+
+    const fromIndex = latestBlock.index - this.adjustmentInterval;
+    const fromBlock = await this.blockModel.findOne({ index: fromIndex });
+    if (!fromBlock) {
+      return latestBlock.difficulty ?? this.difficulty;
+    }
+
+    const actualTime = latestBlock.timestamp - fromBlock.timestamp;
+    const expectedTime =
+      this.targetBlockTimeMs * this.adjustmentInterval;
+
+    let newDifficulty = latestBlock.difficulty ?? this.difficulty;
+
+    // Mild adjustment: chỉ tăng/giảm khi lệch nhiều so với expected
+    if (actualTime < expectedTime / 2) {
+      newDifficulty += 1;
+    } else if (actualTime > expectedTime * 2 && newDifficulty > 1) {
+      newDifficulty -= 1;
+    }
+
+    return newDifficulty;
+  }
+
   async minePendingTransactions(minerAddress: string) {
     try {
       if (!minerAddress) {
@@ -177,11 +236,17 @@ export class BlockchainService implements OnModuleInit {
       };
 
       const transactionsToInclude = [...this.mempool, rewardTx];
-      const { nonce, hash } = mineBlock(this.difficulty, {
+      const merkleRoot = calculateMerkleRoot(transactionsToInclude);
+
+      const difficulty = await this.getAdjustedDifficulty();
+
+      const { nonce, hash } = mineBlock({
         index: newIndex,
         timestamp,
-        transactions: transactionsToInclude,
-        previousHash: latestBlock.hash,
+        previous_hash: latestBlock.hash,
+        merkle_root: merkleRoot,
+        version: 1,
+        difficulty,
       });
       const block = await this.blockModel.create({
         index: newIndex,
@@ -192,6 +257,9 @@ export class BlockchainService implements OnModuleInit {
         transactions: transactionsToInclude,
         miner: minerAddress,
         reward: this.miningReward,
+        merkle_root: merkleRoot,
+        version: 1,
+        difficulty,
       });
 
       this.mempool = [];
@@ -225,15 +293,31 @@ export class BlockchainService implements OnModuleInit {
 
         if (current.previous_hash !== previous.hash) return false;
 
-        const recalculatedHash = calculateHash(
-          current.index,
-          current.timestamp,
-          current.transactions,
-          current.previous_hash,
-          current.nonce,
-        );
+        const merkleRoot = calculateMerkleRoot(current.transactions || []);
+
+        if (current.merkle_root !== merkleRoot) return false;
+
+        const header = {
+          index: current.index,
+          timestamp: current.timestamp,
+          previous_hash: current.previous_hash,
+          merkle_root: merkleRoot,
+          nonce: current.nonce,
+          version: current.version ?? 1,
+          difficulty: current.difficulty ?? this.difficulty,
+        };
+
+        const recalculatedHash = calculateHash(header);
 
         if (current.hash !== recalculatedHash) return false;
+
+        // Đảm bảo hash đáp ứng độ khó được lưu trong header
+        if (
+          !header.difficulty ||
+          !current.hash.startsWith('0'.repeat(header.difficulty))
+        ) {
+          return false;
+        }
       }
 
       return true;

@@ -1,23 +1,32 @@
 import { createHash } from 'crypto';
-import { TransactionEntity } from 'src/entities/transaction.entity';
+import { BlockHeader } from 'src/types/block-header.type';
 
-export function calculateHash(
-  index: number,
-  timestamp: number,
-  transactions: TransactionEntity[],
-  previous_hash: string,
-  nonce: number,
-): string {
-  const txString = transactions.map((tx) => JSON.stringify(tx)).join('|');
+/**
+ * Tính hash cho block header (hash only header, include merkleRoot).
+ */
+export function calculateHash(header: BlockHeader): string {
+  const {
+    index,
+    timestamp,
+    previous_hash,
+    merkle_root,
+    nonce,
+    version,
+    difficulty,
+  } = header;
+
   return createHash('sha256')
     .update(
       JSON.stringify({
         index,
         timestamp,
-        transactions: txString,
         previous_hash,
+        merkle_root,
         nonce,
+        version,
+        difficulty,
       }),
     )
     .digest('hex');
 }
+
