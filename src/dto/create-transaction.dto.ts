@@ -1,6 +1,11 @@
 import { IsNotEmpty, IsOptional, IsNumber, IsString } from 'class-validator';
 
-export class TransactionDto {
+/**
+ * DTO for creating a new transaction.
+ * Client provides only the essential transaction details.
+ * Backend will compute: nonce, timestamp, hash
+ */
+export class CreateTransactionDto {
   @IsString()
   @IsNotEmpty()
   from_address: string;
@@ -13,19 +18,7 @@ export class TransactionDto {
   @IsNotEmpty()
   amount: number;
 
-  @IsString()
-  @IsOptional()
-  signature?: string;
-
-  @IsNumber()
-  @IsOptional()
-  nonce?: number;
-
   @IsNumber()
   @IsOptional()
   fee?: number;
-
-  @IsNumber()
-  @IsOptional()
-  timestamp?: number;
 }

@@ -1,15 +1,17 @@
 import { createHash } from 'crypto';
-import { BlockHeader } from 'src/types/block-header.type';
+import { BlockHeader } from 'src/interfaces/block-header.interface';
+import { IBlockHeader } from 'src/interfaces/block-header.interface';
 
 /**
- * Tính hash cho block header (hash only header, include merkleRoot).
- * 
+ * Tính hash cho block header dùng canonical string format.
+ * Order: index|timestamp|previous_hash|merkle_root|nonce|version|difficulty
+ *
  * Default values:
  * - version: 1 (nếu không có)
  * - difficulty: không có default (phải truyền từ service)
  */
 export function calculateHash(
-  header: BlockHeader,
+  header: BlockHeader | IBlockHeader,
   defaultDifficulty?: number,
 ): string {
   const {
@@ -18,22 +20,12 @@ export function calculateHash(
     previous_hash,
     merkle_root,
     nonce,
-    version = 1, // Default version: 1
-    difficulty = defaultDifficulty, // Default từ service nếu có
+    version = 1,
+    difficulty = defaultDifficulty,
   } = header;
 
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        index,
-        timestamp,
-        previous_hash,
-        merkle_root,
-        nonce,
-        version,
-        difficulty,
-      }),
-    )
-    .digest('hex');
-}
+  // Canonical string format: stable order, no JSON parsing ambiguity
+  const data = `${index}|${timestamp}|${previous_hash}|${merkle_root}|${nonce}|${version}|${difficulty}`;
 
+  return createHash('sha256').update(data).digest('hex');
+}

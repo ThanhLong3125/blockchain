@@ -1,13 +1,21 @@
 import { createHash } from 'crypto';
-import { TransactionEntity } from 'src/entities/transaction.entity';
+import { ITransaction } from 'src/interfaces/transaction.interface';
 
-export function calculateTransactionHash(tx: TransactionEntity): string {
-  const amountStr = tx.amount != null ? String(tx.amount) : '';
-  const data = JSON.stringify({
-    from_address: tx.from_address,
-    to_address: tx.to_address,
-    amount: amountStr,
-  });
+/**
+ * Canonical transaction hash using stable string format.
+ * Order: from_address|to_address|amount|nonce|timestamp|tokenId
+ * This ensures the same transaction always produces the same hash,
+ * regardless of field ordering or JSON implementation differences.
+ */
+export function calculateTransactionHash(tx: ITransaction): string {
+  const from = tx.from_address || '';
+  const to = tx.to_address || '';
+  const amount = tx.amount != null ? String(tx.amount) : '';
+  const nonce = tx.nonce != null ? String(tx.nonce) : '';
+  const timestamp = tx.timestamp != null ? String(tx.timestamp) : '';
+  const tokenId = tx.tokenId || '';
+
+  const data = `${from}|${to}|${amount}|${nonce}|${timestamp}|${tokenId}`;
 
   return createHash('sha256').update(data).digest('hex');
 }

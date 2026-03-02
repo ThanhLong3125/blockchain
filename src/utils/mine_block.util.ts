@@ -1,4 +1,4 @@
-import { BlockHeader } from 'src/types/block-header.type';
+import { BlockHeader } from 'src/interfaces/block-header.interface';
 import { calculateHash } from './calculate_hash.utils';
 
 /**

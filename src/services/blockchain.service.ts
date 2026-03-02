@@ -7,15 +7,15 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { BlockEntity, BlockDocument } from '../entities/block.entity';
-import {
-  TransactionEntity,
-} from '../entities/transaction.entity';
+import { TransactionEntity } from '../entities/transaction.entity';
+import { ITransaction } from '../interfaces/transaction.interface';
 import { createWallet } from '../utils/wallet.util';
 import { verifyTransaction } from '../utils/verify.util';
 import { signTransaction } from '../utils/sign.util';
 import { calculateHash } from '../utils/calculate_hash.utils';
 import { mineBlock } from '../utils/mine_block.util';
 import { calculateMerkleRoot } from '../utils/merkle.util';
+import { calculateTransactionHash } from '../utils/transaction.util';
 
 @Injectable()
 export class BlockchainService implements OnModuleInit {
@@ -24,7 +24,7 @@ export class BlockchainService implements OnModuleInit {
   private readonly adjustmentInterval = 5; // điều chỉnh mỗi 5 block
   private readonly miningReward = 100;
 
-  private mempool: TransactionEntity[] = [];
+  private mempool: ITransaction[] = [];
 
   constructor(
     @InjectModel(BlockEntity.name)
@@ -54,7 +54,7 @@ export class BlockchainService implements OnModuleInit {
     }
   }
 
-  signTransaction(transaction: TransactionEntity, privateKey: string) {
+  signTransaction(transaction: ITransaction, privateKey: string) {
     try {
       if (!transaction || !privateKey) {
         throw new Error('Transaction and privateKey are required');
@@ -68,7 +68,7 @@ export class BlockchainService implements OnModuleInit {
     }
   }
 
-  verifyTransaction(transaction: TransactionEntity) {
+  verifyTransaction(transaction: ITransaction) {
     try {
       if (!transaction) {
         throw new Error('Transaction is required');
@@ -129,7 +129,69 @@ export class BlockchainService implements OnModuleInit {
   // MEMPOOL
   // ==============================
 
-  async addTransactionToMempool(transaction: TransactionEntity) {
+  /**
+   * Prepare a transaction for signing.
+   * Backend computes: nonce, timestamp, hash.
+   * Client then signs this locally and sends it back to addTransactionToMempool.
+   */
+  async prepareTransaction(dto: {
+    from_address: string;
+    to_address: string;
+    amount: number;
+    fee?: number;
+  }): Promise<ITransaction> {
+    try {
+      if (!dto.from_address || !dto.to_address || dto.amount === undefined) {
+        throw new Error(
+          'Missing required fields: from_address, to_address, amount',
+        );
+      }
+
+      // Compute confirmed max nonce for sender
+      const blocks = await this.blockModel.find();
+      let maxConfirmedNonce = -1;
+      for (const block of blocks) {
+        for (const tx of block.transactions || []) {
+          if (
+            tx.from_address === dto.from_address &&
+            typeof tx.nonce === 'number'
+          ) {
+            if (tx.nonce > maxConfirmedNonce) maxConfirmedNonce = tx.nonce;
+          }
+        }
+      }
+
+      // Include pending txs in mempool
+      const pendingCount = this.mempool.filter(
+        (t) => t.from_address === dto.from_address,
+      ).length;
+      const nonce = maxConfirmedNonce + 1 + pendingCount;
+
+      // Set timestamp
+      const timestamp = Date.now();
+
+      // Create transaction object for hashing
+      const tx: ITransaction = {
+        from_address: dto.from_address,
+        to_address: dto.to_address,
+        amount: dto.amount,
+        fee: dto.fee,
+        nonce,
+        timestamp,
+      };
+
+      // Compute canonical hash
+      tx.hash = calculateTransactionHash(tx);
+
+      return tx;
+    } catch (error) {
+      throw new BadRequestException(
+        'Failed to prepare transaction: ' + error.message,
+      );
+    }
+  }
+
+  async addTransactionToMempool(transaction: ITransaction) {
     try {
       if (
         !transaction ||
@@ -145,6 +207,60 @@ export class BlockchainService implements OnModuleInit {
         if (!isValid) {
           throw new Error('Invalid transaction signature');
         }
+      }
+
+      // For account-model: enforce nonce and check pending balance (prevent replay/double-spend)
+      if (transaction.from_address !== 'SYSTEM') {
+        // compute confirmed max nonce for sender
+        const blocks = await this.blockModel.find();
+        let maxConfirmedNonce = -1;
+        for (const block of blocks) {
+          for (const tx of block.transactions || []) {
+            if (
+              tx.from_address === transaction.from_address &&
+              typeof tx.nonce === 'number'
+            ) {
+              if (tx.nonce > maxConfirmedNonce) maxConfirmedNonce = tx.nonce;
+            }
+          }
+        }
+
+        const pendingCount = this.mempool.filter(
+          (t) => t.from_address === transaction.from_address,
+        ).length;
+        const expectedNonce = maxConfirmedNonce + 1 + pendingCount;
+
+        if (typeof transaction.nonce !== 'number') {
+          throw new Error('Missing nonce for account-style transaction');
+        }
+
+        if (transaction.nonce !== expectedNonce) {
+          throw new Error(
+            `Invalid nonce. Expected ${expectedNonce} but got ${transaction.nonce}`,
+          );
+        }
+
+        // pending outgoing (amount + fee) from mempool for this sender
+        const pendingOutgoing = this.mempool
+          .filter((t) => t.from_address === transaction.from_address)
+          .reduce((s, t) => s + (t.amount || 0) + (t.fee || 0), 0);
+
+        const confirmedBalance = await this.getBalance(
+          transaction.from_address,
+        );
+        const required = (transaction.amount || 0) + (transaction.fee || 0);
+
+        if (confirmedBalance - pendingOutgoing < required) {
+          throw new Error(
+            'Insufficient balance (considering pending outgoing transactions)',
+          );
+        }
+      }
+
+      // Transaction hash should already be computed during preparation.
+      // Signature verification ensures the hash hasn't been tampered with.
+      if (!transaction.hash) {
+        throw new Error('Transaction hash is missing');
       }
 
       this.mempool.push(transaction);
@@ -200,8 +316,7 @@ export class BlockchainService implements OnModuleInit {
     }
 
     const actualTime = latestBlock.timestamp - fromBlock.timestamp;
-    const expectedTime =
-      this.targetBlockTimeMs * this.adjustmentInterval;
+    const expectedTime = this.targetBlockTimeMs * this.adjustmentInterval;
 
     let newDifficulty = latestBlock.difficulty ?? this.difficulty;
 
@@ -229,10 +344,14 @@ export class BlockchainService implements OnModuleInit {
       const newIndex = latestBlock.index + 1;
       const timestamp = Date.now();
 
+      // Sum fees from mempool transactions
+      const totalFees = this.mempool.reduce((s, tx) => s + (tx.fee || 0), 0);
+      const rewardAmount = this.miningReward + totalFees;
+
       const rewardTx = {
         from_address: 'SYSTEM',
         to_address: minerAddress,
-        amount: this.miningReward,
+        amount: rewardAmount,
       };
 
       const transactionsToInclude = [...this.mempool, rewardTx];
@@ -256,7 +375,7 @@ export class BlockchainService implements OnModuleInit {
         nonce,
         transactions: transactionsToInclude,
         miner: minerAddress,
-        reward: this.miningReward,
+        reward: rewardAmount,
         merkle_root: merkleRoot,
         version: 1,
         difficulty,
@@ -340,7 +459,9 @@ export class BlockchainService implements OnModuleInit {
 
       for (const block of blocks) {
         for (const tx of block.transactions || []) {
-          if (tx.from_address === address && tx.amount) balance -= tx.amount;
+          const fee = tx.fee || 0;
+          if (tx.from_address === address && tx.amount)
+            balance -= tx.amount + fee;
           if (tx.to_address === address && tx.amount) balance += tx.amount;
         }
       }
