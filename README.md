@@ -5,16 +5,18 @@
 2. [Mục Tiêu Học Tập](#mục-tiêu-học-tập)
 3. [Công Nghệ & Stack](#công-nghệ--stack)
 4. [Kiến Trúc Hệ Thống](#kiến-trúc-hệ-thống)
-5. [Tính Năng Chi Tiết](#tính-năng-chi-tiết)
-6. [API Documentation](#api-documentation)
-7. [Mô Hình Dữ Liệu](#mô-hình-dữ-liệu)
-8. [Cryptography & Security](#cryptography--security)
-9. [Cài Đặt & Chạy](#cài-đặt--chạy)
-10. [Ví Dụ Sử Dụng](#ví-dụ-sử-dụng)
-11. [Luồng Hoạt Động](#luồng-hoạt-động)
+5. [Tính Năng Chi Tiết](#%EF%B8%8F-tính-năng-chi-tiết)
+6. [API Documentation](#-api-documentation)
+7. [Mô Hình Dữ Liệu](#-mô-hình-dữ-liệu)
+8. [Cryptography & Security](#-cryptography--security)
+9. [Cài Đặt & Chạy](#-cài-đặt--chạy)
+10. [Ví Dụ Sử Dụng](#-ví-dụ-sử-dụng)
+11. [Luồng Hoạt Động](#-luồng-hoạt-động-chi-tiết)
 12. [Error Handling](#error-handling)
-13. [Key Learnings](#key-learnings)
-14. [Phát Triển Trong Tương Lai](#phát-triển-trong-tương-lai)
+13. [Testing](#-testing)
+14. [Project Highlights](#-project-highlights--notable-features)
+15. [Key Learnings](#-project-highlights--notable-features)
+16. [Phát Triển Trong Tương Lai](#phát-triển-trong-tương-lai)
 
 ---
 
@@ -25,8 +27,15 @@
 - **MongoDB** - Cơ sở dữ liệu NoSQL để lưu trữ blocks
 - **Elliptic Cryptography** - Cho digital signatures (secp256k1 - chuẩn Bitcoin/Ethereum)
 - **SHA-256 Hashing** - Để bảo vệ dữ liệu blocks
+- **Account Model** - Quản lý nonce & balance theo từng account (giống Ethereum)
 
-Dự án tập trung vào việc minh họa các khái niệm cơ bản của blockchain một cách dễ hiểu và có thể thực hành.
+Dự án tập trung vào việc minh họa các khái niệm cơ bản của blockchain một cách dễ hiểu và có thể thực hành, bao gồm advanced features như:
+- ✅ **Canonical Transaction Hashing** - Hash xác định cho mỗi transaction
+- ✅ **Account-Style Nonce Tracking** - Phòng chống replay attacks
+- ✅ **Double-Spend Prevention** - Kiểm tra balance pending
+- ✅ **Transaction Fees** - Tính phí giao dịch & tích lũy vào reward
+- ✅ **Enhanced Blockchain Validation** - Xác thực chữ ký & coinbase correctness
+- ✅ **Prepare-Sign-Add Flow** - workflow an toàn cho unsigned transactions
 
 ---
 
@@ -129,6 +138,190 @@ Dự án tập trung vào việc minh họa các khái niệm cơ bản của bl
 ---
 
 ## ⚙️ Tính Năng Chi Tiết
+
+### 🎯 Advanced Transaction Features (Transaction Model Nâng Cao)
+
+#### A. Canonical Transaction Hashing
+- **Purpose**: Tạo hash xác định và ổn định cho mỗi transaction
+- **Format**: `from_address|to_address|amount|nonce|timestamp|tokenId`
+- **Lợi ích**:
+  - ✅ Deterministic: Cùng transaction data → Cùng hash
+  - ✅ Không phụ thuộc vào field ordering
+  - ✅ An toàn cho signing/verification
+
+```typescript
+// Ví dụ canonical transaction hash
+const tx = {
+  from_address: "04abc...",
+  to_address: "04def...",
+  amount: 100,
+  nonce: 0,
+  timestamp: 1704067200000
+};
+const hash = SHA256("04abc...|04def...|100|0|1704067200000");
+// hash được dùng để ký và verify
+```
+
+#### B. Account-Style Nonce Tracking
+- **Purpose**: Phòng chống replay attacks & đảm bảo order transactions từ một sender
+- **Mechanism**: Backend tự động assign nonce khi `prepareTransaction`
+- **Validation**: Khi `addTransactionToMempool`, nonce phải = maxConfirmedNonce + pendingCount + 1
+
+```typescript
+// Ví dụ flow
+1. Sender A chưa có transaction nào: nonce = 0
+2. Sender A tạo tx1 với nonce 0, tx2 với nonce 1
+3. Khi xác nhận tx1 → nonce max = 0
+4. Nếu tx2 (nonce 1) đến → accepted
+5. Nếu có tx3 (nonce 1 duplicate) → rejected (invalid nonce)
+6. Nếu có tx3 (nonce 2) mà tx2 chưa accept → pending, chờ tx2 confirm
+```
+
+**Lợi ích:**
+- ✅ Phòng chống replay attacks (không thể submit cùng tx hai lần)
+- ✅ Đảm bảo order transactions từ một account
+- ✅ Giống Ethereum account model
+
+#### C. Double-Spend Prevention
+- **Mechanism**: Kiểm tra `pending balance` trước khi add vào mempool
+- **Calculation**:
+  ```
+  confirmedBalance = tổng incoming - tổng outgoing từ all confirmed blocks
+  pendingOutgoing = tổng (amount + fee) của transactions từ sender trong mempool
+  
+  Validation: confirmedBalance - pendingOutgoing >= requiredAmount + fee
+  ```
+
+**Lợi ích**:
+- ✅ Phòng chống double-spend mà không cần UTXO tracking
+- ✅ Đơn giản hơn UTXO model nhưng vẫn an toàn
+- ✅ Giống Ethereum
+
+#### D. Transaction Fees & Reward Aggregation
+- **Fee Field**: Được set khi `prepareTransaction`
+- **Mining Reward**: `baseReward (100) + sumFees` từ tất cả transactions
+- **Coinbase Placement**: **Luôn ở vị trí đầu tiên** trong transactions[]
+- **Coinbase Amount**: `miningReward + sumFees` (được validate trong `validateBlockchain`)
+
+```typescript
+// Ví dụ mining block với 3 transactions
+mempool: [
+  tx1: { from: "A", to: "B", amount: 50, fee: 1 },
+  tx2: { from: "C", to: "D", amount: 30, fee: 2 },
+  tx3: { from: "E", to: "F", amount: 20, fee: 1 }
+]
+
+totalFees = 1 + 2 + 1 = 4
+minerReward = 100 (base) + 4 (fees) = 104
+
+block.transactions = [
+  { from: "SYSTEM", to: "miner", amount: 104 },  // Coinbase luôn đầu tiên!
+  tx1,
+  tx2,
+  tx3
+]
+```
+
+#### E. Prepare → Sign → Add Flow (3-Step Transaction Creation)
+
+**Tại sao separate prepare bước?**
+- ✅ Backend kiểm soát nonce & timestamp (tránh double-spend & timing issues)
+- ✅ Client ký transaction hash đã confirm từ backend
+- ✅ Không có race condition giữa prepare & sign
+- ✅ Signature không bao giờ thay đổi sau khi ký
+
+**Flow chi tiết:**
+```
+1️⃣  CLIENT PREPARES
+   POST /transaction/prepare
+   {
+     from_address: "client_public_key",
+     to_address: "recipient",
+     amount: 100,
+     fee: 1
+   }
+   
+   RESPONSE (Backend computed):
+   {
+     from_address: "client_public_key",
+     to_address: "recipient",
+     amount: 100,
+     fee: 1,
+     nonce: 3,                    ← Backend computed
+     timestamp: 1704067200000,    ← Backend computed
+     hash: "sha256_hash"          ← Backend computed (canonical)
+   }
+
+2️⃣  CLIENT SIGNS (locally)
+   Sign transaction hash with private key (offline)
+   signature = ECDSA_SIGN(hash, privateKey)
+   tx.signature = signature
+
+3️⃣  CLIENT SUBMITS
+   POST /transaction
+   {
+     from_address: "...",
+     to_address: "...",
+     amount: 100,
+     fee: 1,
+     nonce: 3,
+     timestamp: 1704067200000,
+     hash: "...",
+     signature: "DER_format_signature"
+   }
+   
+   VALIDATION (Backend):
+   - Verify signature matches hash
+   - Verify nonce is sequential
+   - Verify balance sufficient (confirmed - pending)
+   - Add to mempool
+```
+
+**Lợi ích của flow này:**
+- ✅ Ngăn chặn race condition & nonce collision
+- ✅ Signature bảo vệ toàn bộ tx data (bao gồm nonce, timestamp)
+- ✅ Backend kiểm soát nonce state (trusted nonce source)
+- ✅ Giống MuiSwap smart contract patternns thiên tế
+
+#### F. Enhanced Blockchain Validation
+
+**Validation Logic Đầu Đủ:**
+
+```typescript
+for each block in blockchain (từ index 1):
+  1. ✅ Check Chain Continuity
+     previous_hash == hash_của_block_trước
+  
+  2. ✅ Verify Merkle Root
+     merkle_root_tính_lại = calculateMerkleRoot(transactions)
+     merkle_root_lưu == merkle_root_tính_lại
+  
+  3. ✅ Recalculate Block Hash
+     header = { index, timestamp, previous_hash, merkle_root, nonce, version, difficulty }
+     hash_tính_lại = SHA256(header)
+     hash_lưu == hash_tính_lại
+  
+  4. ✅ Check Proof-of-Work
+     difficulty > 0 → hash phải bắt đầu bằng (difficulty x "0")
+  
+  5. ✅ Verify Coinbase (Transaction[0])
+     from_address == "SYSTEM"
+     amount == baseReward + tổng_fees_từ_transactions_khác
+  
+  6. ✅ Verify Each Transaction
+     for each tx in transactions:
+       - Nếu tx.from_address != "SYSTEM":
+         * tx.hash == calculateTransactionHash(tx)
+         * verifySignature(tx) == true
+```
+
+**Validation này đảm bảo:**
+- ✅ Blockchain integrity (không ai modify được blocks cũ)
+- ✅ Miner reward correctness (không miner claim thêm tokens)
+- ✅ Transaction authenticity (mỗi tx đều có signature hợp lệ)
+- ✅ Proof-of-Work compliance (nonce được tìm đúng)
+
+---
 
 ### 1️⃣ Wallet Management
 - **Feature**: Tạo cặp key cryptographic bằng Elliptic Curve
@@ -349,7 +542,42 @@ Error (500):
 
 ### 📝 Transaction Endpoints
 
-#### Sign Transaction
+#### Prepare Transaction (Step 1 of 3-step flow)
+```http
+POST /transaction/prepare
+Content-Type: application/json
+
+Request:
+{
+  "from_address": "04abc...",
+  "to_address": "04def...",
+  "amount": 100,
+  "fee": 1
+}
+
+Response (200):
+{
+  "from_address": "04abc...",
+  "to_address": "04def...",
+  "amount": 100,
+  "fee": 1,
+  "nonce": 3,
+  "timestamp": 1704067200000,
+  "hash": "sha256_hash...",
+  "signature": ""
+}
+
+// Client then signs this locally with private key:
+signature = ECDSA.sign(hash, privateKey)
+
+Error (400):
+{
+  "message": "Failed to prepare transaction: ...",
+  "statusCode": 400
+}
+```
+
+#### Sign Transaction (for offline signing - alternative to prepare flow)
 ```http
 POST /transaction/sign
 Content-Type: application/json
@@ -400,30 +628,44 @@ Response (200):
 }
 ```
 
-#### Add Transaction to Mempool
+#### Add Transaction to Mempool (Step 3 of 3-step flow)
 ```http
 POST /transaction
 Content-Type: application/json
 
 Request:
 {
-  "from_address": "...",
-  "to_address": "...",
-  "amount": 50,
-  "signature": "..."
+  "from_address": "04abc...",
+  "to_address": "04def...",
+  "amount": 100,
+  "fee": 1,
+  "nonce": 3,
+  "timestamp": 1704067200000,
+  "hash": "sha256_hash...",
+  "signature": "DER_format_signature"
 }
 
 Response (201):
 {
-  "from_address": "...",
-  "to_address": "...",
-  "amount": 50,
-  "signature": "..."
+  "from_address": "04abc...",
+  "to_address": "04def...",
+  "amount": 100,
+  "fee": 1,
+  "nonce": 3,
+  "timestamp": 1704067200000,
+  "hash": "sha256_hash...",
+  "signature": "DER_format_signature"
 }
 
 Error (400):
 {
-  "message": "Failed to add transaction to mempool: Invalid transaction signature",
+  "message": "Failed to add transaction to mempool: Invalid nonce",
+  "statusCode": 400
+}
+
+Error (400):
+{
+  "message": "Failed to add transaction to mempool: Insufficient balance (considering pending outgoing transactions)",
   "statusCode": 400
 }
 ```
@@ -434,8 +676,24 @@ GET /transactions/pending
 
 Response (200):
 [
-  { "from_address": "...", "to_address": "...", "amount": 50, "signature": "..." },
-  { "from_address": "...", "to_address": "...", "amount": 30, "signature": "..." }
+  { 
+    "from_address": "04abc...", 
+    "to_address": "04def...", 
+    "amount": 50, 
+    "fee": 1,
+    "nonce": 0,
+    "hash": "...",
+    "signature": "..." 
+  },
+  { 
+    "from_address": "04xyz...", 
+    "to_address": "04uvw...", 
+    "amount": 30,
+    "fee": 2, 
+    "nonce": 1,
+    "hash": "...",
+    "signature": "..." 
+  }
 ]
 ```
 
@@ -591,11 +849,41 @@ interface BlockHeader {
   from_address: String,       // Địa chỉ gửi (public key)
   to_address: String,         // Địa chỉ nhận
   amount: Number,             // Số lượng token
+  fee: Number,                // Phí giao dịch (mặc định: 0)
   signature: String,          // Chữ ký số (ECDSA DER format)
+  nonce: Number,              // Sequence number từ sender (phòng chống replay)
+  hash: String,               // Canonical transaction hash (SHA-256)
+  timestamp: Number,          // Thời gian tạo (ms) - Backend set
+  tokenId: String,            // Token type (optional - future feature)
   createdAt: Date,
   updatedAt: Date
 }
+
+// Transaction Interface (TypeScript)
+interface ITransaction {
+  from_address: string;       // '04abc...' (public key) hoặc 'SYSTEM'
+  to_address: string;         // '04def...' (public key)
+  amount: number;             // số lượng token
+  fee?: number;               // phí (default 0)
+  signature?: string;         // DER format
+  nonce?: number;             // sequence number
+  hash?: string;              // canonical transaction hash
+  timestamp?: number;         // ms
+  tokenId?: string;           // token type
+}
 ```
+
+**Canonical Transaction Hash:**
+```
+hash = SHA256(
+  from_address|to_address|amount|nonce|timestamp|tokenId
+)
+```
+
+Điều này đảm bảo:
+- ✅ Mỗi transaction có hash unique & deterministic
+- ✅ Hash này là input của ECDSA signing
+- ✅ Thay đổi bất kỳ field nào → hash thay đổi → signature invalid
 
 ---
 
@@ -1259,6 +1547,139 @@ npm test -- blockchain.service.spec.ts
 
 ---
 
+## 🌟 Project Highlights & Notable Features
+
+### 🎯 What Makes This Project Stand Out
+
+#### 1. **Advanced Transaction Model (Account-Style)**
+- ✅ **Canonical Transaction Hashing**: Transaction hash là function xác định của transaction data
+- ✅ **Nonce Tracking**: Phòng chống replay attacks như Ethereum
+- ✅ **Double-Spend Prevention**: Kiểm tra pending balance trước khi add mempool
+- ✅ **Transaction Fees**: Tích lũy vào mining reward
+- ✅ **Prepare-Sign-Add Flow**: 3-step flow an toàn cho transaction creation
+
+**Lợi ích so với UTXO model (Bitcoin-style):**
+- Đơn giản hơn: account = address + nonce
+- Hiệu quả hơn: không cần track UTXOs
+- Flexible hơn: dễ implement advanced features (smart contracts)
+- Familiar hơn: giống Ethereum model
+
+#### 2. **Enhanced Blockchain Validation**
+- ✅ **Merkle Root Verification**: Verify toàn bộ transactions qua 1 hash
+- ✅ **Transaction Signature Verification**: Verify chữ ký của mỗi transaction
+- ✅ **Canonical Hash Verification**: Verify mỗi transaction hash đúng cách
+- ✅ **Coinbase Correctness**: Verify reward amount = baseReward + sumFees
+- ✅ **Proof-of-Work Verification**: Verify hash thỏa mãn difficulty
+
+Validation này đảm bảo:
+- Không ai modify blockchain được (immutable)
+- Miner không claim thêm tokens (reward correctness)
+- Mỗi transaction authenticated by signature
+- Block difficulty requirements met
+
+#### 3. **Efficient Hash Strategy**
+- ✅ **Header-Only Hashing**: Hash chỉ header, không hash transactions trực tiếp
+- ✅ **Merkle Root Representation**: Merkle Root đại diện compact cho toàn bộ transactions
+- ✅ **Mining Efficiency**: Không cần hash lại transaction list mỗi lần thử nonce
+
+```
+Bitcoin/Ethereum Approach (giống project này):
+- Hash only header (32 bytes → 256-bit hash)
+- Merkle Root (32 bytes) đại diện transactions
+
+Thay vì:
+- Hash toàn bộ block (header + transactions)
+- Không cần recalculate nếu transaction order thay đổi
+```
+
+#### 4. **Production-Ready Code Structure**
+- ✅ **NestJS Modular Architecture**: Controllers → Services → Utils
+- ✅ **TypeScript Strong Typing**: Full type safety, compile-time checking
+- ✅ **DTO Validation**: Input validation trước khi processing
+- ✅ **Error Handling**: Comprehensive try-catch with meaningful errors
+- ✅ **Dependency Injection**: Loose coupling, easy to test
+
+#### 5. **Comprehensive Testing**
+- ✅ **Unit Tests**: Service-level tests with mocked database
+- ✅ **Validation Tests**: Tests for coinbase, signatures, balance
+- ✅ **E2E Tests**: Integration tests with in-memory MongoDB
+- ✅ **Mock Utilities**: Mocked DB models for isolated testing
+
+#### 6. **Educational Value**
+- ✅ **Step-by-Step Flow**: Detailed prepare → sign → add workflow
+- ✅ **Canonical Hashing**: Deterministic hash for security
+- ✅ **Merkle Tree**: Binary hash tree for efficient verification
+- ✅ **Difficulty Adjustment**: Automatic PoW adjustment mechanism
+- ✅ **Account Model vs UTXO**: Learn both paradigms (account implemented, UTXO as future)
+
+### 📋 Technical Accomplishments
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Wallet Management | ✅ Complete | secp256k1 keypair generation |
+| Digital Signatures | ✅ Complete | ECDSA signing/verification |
+| Canonical Tx Hashing | ✅ Complete | Deterministic transaction hash |
+| Account-Style Nonce | ✅ Complete | Replay attack protection |
+| Double-Spend Prevention | ✅ Complete | Pending balance validation |
+| Transaction Fees | ✅ Complete | Fee aggregation into reward |
+| Prepare-Sign-Add Flow | ✅ Complete | 3-step secure transaction creation |
+| Mempool Management | ✅ Complete | In-memory transaction pool |
+| Block Mining (PoW) | ✅ Complete | Difficulty-based nonce finding |
+| Header/Body Separation | ✅ Complete | Efficient hashing strategy |
+| Merkle Tree | ✅ Complete | Compact transaction representation |
+| Difficulty Adjustment | ✅ Complete | Automatic PoW adjustment (target: 10s/block) |
+| Blockchain Validation | ✅ Complete | Chain continuity + signature + coinbase verification |
+| Balance Calculation | ✅ Complete | Account-style balance tracking |
+| Unit Tests | ✅ Complete | Service-level with mocks |
+| Validation Tests | ✅ Complete | Signature, coinbase, balance tests |
+| E2E Tests | ✅ Complete | Integration with in-memory DB |
+
+### 🎓 Learning Outcomes
+
+Setelah memahami project ini, belajar apa:
+
+1. **Blockchain fundamentals**
+   - Bây giờ hiểu cách blockchain bảo vệ data (immutability)
+   - Hash chaining, Merkle tree, PoW consensus
+
+2. **Cryptography essentials**
+   - Elliptic curve cryptography (secp256k1)
+   - Digital signatures (ECDSA)
+   - Hash functions (SHA-256)
+
+3. **System design patterns**
+   - Account model vs UTXO model tradeoffs
+   - Layered architecture (API → Service → Data)
+   - Separation of concerns
+
+4. **Backend development**
+   - NestJS framework best practices
+   - TypeScript for type safety
+   - MongoDB integration
+   - API design (DTOs, validation, error handling)
+
+5. **Testing strategies**
+   - Unit testing with mocks
+   - Integration testing
+   - Testing cryptographic functions
+   - Test data factory patterns
+
+### 🚀 Performance Characteristics
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Hash Algorithm | SHA-256 | 256-bit output, industry standard |
+| Signing Algorithm | ECDSA/secp256k1 | ~110-120 bytes signature |
+| Initial Difficulty | 2 | Block hash bắt đầu "00" |
+| Target Block Time | ~10 seconds | Được điều chỉnh tự động |
+| Mining Adjustment Interval | Every 5 blocks | Mild adjustment (+/-1 difficulty) |
+| Base Reward | 100 tokens | Per block |
+| Mempool Storage | In-memory array | ~100+ transactions |
+| Transaction Hash | Canonical string | `from\|to\|amount\|nonce\|timestamp` |
+| Merkle Root | Binary tree | log(n) proof depth |
+
+---
+
 ## 📞 Support & Resources
 
 ### Blockchain Resources
@@ -1300,6 +1721,19 @@ February 2026
 | 1.1 | 2026-02-15 | Added comprehensive error handling with try/catch blocks in all service methods |
 | 1.2 | 2026-02-15 | Complete documentation and detailed report generation |
 | 2.0 | 2026-02-20 | **Major Update**: Block Header/Body separation, Merkle Root, Hash only header, Difficulty adjustment |
+| 2.5 | 2026-03-02 | **Advanced Transactions**: Canonical hashing, account-style nonce, double-spend prevention, fees, coinbase validation |
+
+**Version 2.5 Highlights (Latest):**
+- ✅ **Canonical Transaction Hashing**: Deterministic hash = `from|to|amount|nonce|timestamp|tokenId`
+- ✅ **Account-Style Nonce**: Sequential nonce per sender (phòng chống replay attacks)
+- ✅ **Double-Spend Prevention**: Check pending balance before adding to mempool
+- ✅ **Transaction Fees**: Fee support + aggregation into mining reward
+- ✅ **Coinbase Validation**: Verify reward = baseReward + sumFees
+- ✅ **Prepare-Sign-Add Flow**: 3-step secure transaction creation (backend → client → backend)
+- ✅ **Enhanced Validation**: Verify each tx signature + hash + balance consistency
+- ✅ **Merkle Leaf Update**: Use canonical tx.hash for merkle leaves (not JSON.stringify)
+- ✅ **Comprehensive Tests**: Unit tests for account model, validation tests for coinbase/signatures
+- ✅ **Refactored getBalance**: Explicit coinbase handling, deterministic sorting
 
 **Version 2.0 Highlights:**
 - ✅ Tách Block thành Header và Body theo chuẩn blockchain
@@ -1309,4 +1743,4 @@ February 2026
 - ✅ Genesis block giờ cũng dùng hash header thay vì chuỗi cố định
 - ✅ Validation được cải thiện: kiểm tra Merkle Root và difficulty requirement
 
-_Last updated: February 20, 2026_
+_Last updated: March 2, 2026_

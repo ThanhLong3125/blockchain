@@ -348,13 +348,23 @@ export class BlockchainService implements OnModuleInit {
       const totalFees = this.mempool.reduce((s, tx) => s + (tx.fee || 0), 0);
       const rewardAmount = this.miningReward + totalFees;
 
-      const rewardTx = {
+      const rewardTx: ITransaction = {
         from_address: 'SYSTEM',
         to_address: minerAddress,
         amount: rewardAmount,
-      };
+        fee: 0,
+        nonce: 0,
+        timestamp,
+        signature: '',
+        hash: '',
+      } as ITransaction;
 
-      const transactionsToInclude = [...this.mempool, rewardTx];
+      // assign canonical hash for reward (coinbase)
+      rewardTx.hash = calculateTransactionHash(rewardTx);
+
+      // place reward (coinbase) transaction as first transaction
+      const transactionsToInclude: ITransaction[] = [rewardTx, ...this.mempool];
+
       const merkleRoot = calculateMerkleRoot(transactionsToInclude);
 
       const difficulty = await this.getAdjustedDifficulty();
@@ -367,6 +377,7 @@ export class BlockchainService implements OnModuleInit {
         version: 1,
         difficulty,
       });
+
       const block = await this.blockModel.create({
         index: newIndex,
         timestamp,
@@ -426,17 +437,35 @@ export class BlockchainService implements OnModuleInit {
           difficulty: current.difficulty ?? this.difficulty,
         };
 
-        // Truyền defaultDifficulty để đảm bảo tính đúng hash
-        const recalculatedHash = calculateHash(header, this.difficulty);
-
+        // Recalculate header hash using header.difficulty (if present)
+        const recalculatedHash = calculateHash(header);
         if (current.hash !== recalculatedHash) return false;
 
-        // Đảm bảo hash đáp ứng độ khó được lưu trong header
-        if (
-          !header.difficulty ||
-          !current.hash.startsWith('0'.repeat(header.difficulty))
-        ) {
+        // Ensure stored hash meets header difficulty (if difficulty is set)
+        if (header.difficulty && !current.hash.startsWith('0'.repeat(header.difficulty))) {
           return false;
+        }
+
+        // Verify each transaction: hash matches canonical and signature is valid
+        const txs = current.transactions || [];
+
+        // Check coinbase (convention: first tx is coinbase)
+        if (txs.length === 0) return false;
+        const coinbase = txs[0];
+        const sumFees = txs.slice(1).reduce((s, t: ITransaction) => s + (t.fee || 0), 0);
+        if (coinbase.from_address !== 'SYSTEM') return false;
+        if (coinbase.amount !== this.miningReward + sumFees) return false;
+
+        for (const tx of txs) {
+          // Ensure tx.hash equals canonical
+          const canonical = calculateTransactionHash(tx as ITransaction);
+          if (tx.hash !== canonical) return false;
+
+          // Skip signature check for system/coinbase
+          if (tx.from_address === 'SYSTEM') continue;
+
+          const ok = verifyTransaction(tx as ITransaction);
+          if (!ok) return false;
         }
       }
 
@@ -454,15 +483,29 @@ export class BlockchainService implements OnModuleInit {
         throw new Error('Address is required');
       }
 
-      const blocks = await this.blockModel.find();
+      const blocks = await this.blockModel.find().sort({ index: 1 });
       let balance = 0;
 
       for (const block of blocks) {
-        for (const tx of block.transactions || []) {
+        const txs = block.transactions || [];
+        for (const tx of txs) {
           const fee = tx.fee || 0;
-          if (tx.from_address === address && tx.amount)
+
+          // Coinbase / system reward
+          if (tx.from_address === 'SYSTEM' && tx.to_address === address && tx.amount) {
+            balance += tx.amount;
+            continue;
+          }
+
+          // Outgoing payment (sender pays amount + fee)
+          if (tx.from_address === address && tx.amount) {
             balance -= tx.amount + fee;
-          if (tx.to_address === address && tx.amount) balance += tx.amount;
+          }
+
+          // Incoming payment
+          if (tx.to_address === address && tx.amount) {
+            balance += tx.amount;
+          }
         }
       }
 

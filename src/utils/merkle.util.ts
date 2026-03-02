@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
-import { TransactionEntity } from 'src/entities/transaction.entity';
+import { ITransaction } from 'src/interfaces/transaction.interface';
+import { calculateTransactionHash } from './transaction.util';
 
 function hashLeaf(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -10,27 +11,23 @@ function hashPair(left: string, right: string): string {
 }
 
 export function calculateMerkleRoot(
-  transactions: TransactionEntity[],
+  transactions: ITransaction[],
 ): string {
-  if (!transactions || transactions.length === 0) {
-    // Merkle root cho danh sách rỗng – có thể chuẩn hoá tuỳ ý
-    return '';
-  }
+  if (!transactions || transactions.length === 0) return '';
 
-  // Hash từng transaction (dùng JSON ổn cho demo, thực tế nên dùng txId)
-  let level: string[] = transactions.map((tx) =>
-    hashLeaf(JSON.stringify(tx)),
-  );
+  // Use transaction canonical hash when available; otherwise compute it
+  let level: string[] = transactions.map((tx) => {
+    const leaf = tx.hash ?? calculateTransactionHash(tx);
+    return hashLeaf(leaf);
+  });
 
   while (level.length > 1) {
     const nextLevel: string[] = [];
-
     for (let i = 0; i < level.length; i += 2) {
       const left = level[i];
-      const right = level[i + 1] ?? left; // nếu lẻ, nhân đôi node cuối
+      const right = level[i + 1] ?? left;
       nextLevel.push(hashPair(left, right));
     }
-
     level = nextLevel;
   }
 
